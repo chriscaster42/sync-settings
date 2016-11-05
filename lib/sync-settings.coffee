@@ -286,15 +286,30 @@ SyncSettings =
         atom.config.set keyPath[1...], value
 
   installMissingPackages: (packages, cb) ->
-    pending=0
-    for pkg in packages
-      continue if atom.packages.isPackageLoaded(pkg.name) and
-        (!!pkg.apmInstallSource is !!atom.packages.getLoadedPackage(pkg.name).metadata.apmInstallSource)
-      pending++
-      @installPackage pkg, ->
-        pending--
-        cb?() if pending is 0
-    cb?() if pending is 0
+    missing_packages = (
+      pkg for pkg in packages when not atom.packages.isPackageLoaded(pkg.name) or not (!!pkg.apmInstallSource is !!atom.packages.getLoadedPackage(pkg.name).metadata.apmInstallSource))
+    if missing_packages.length is 0
+      atom.notifications.addInfo "Sync-settings: no packages to install"
+      return cb?()
+
+    failed = []
+    notifications = {}
+    missing_packages.forEach (pkg, i) =>
+      notifications[pkg.name] = atom.notifications.addInfo "Sync-settings: installing #{pkg.name} (#{i+1}/#{missing_packages.length})", {dismissable: true}
+      @installPackage pkg, (error) =>
+        notifications[pkg.name].dismiss()
+        delete notifications[pkg.name]
+        if error?
+          failed.push(pkg.name)
+          atom.notifications.addWarning "Sync-settings: failed to install #{pkg.name}"
+        if Object.keys(notifications).length is 0
+          if failed.length is 0
+            atom.notifications.addSuccess "Sync-settings: finished installing #{missing_packages.length} packages"
+          else
+            failed.sort()
+            failedStr = failed.join(', ')
+            atom.notifications.addWarning "Sync-settings: finished installing packages (#{failed.length} failed: #{failedStr})", {dismissable: true}
+          cb?()
 
   installPackage: (pack, cb) ->
     type = if pack.theme then 'theme' else 'package'
